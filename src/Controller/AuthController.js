@@ -346,10 +346,22 @@ const LoginUser = async (req, res, next) => {
     }
     const { email, password, deviceType, deviceToken } = req.body;
     const AuthModel = await authModel.findOne({ email });
-    // console.log(AuthModel);
+
     if (!AuthModel) {
       return next(CustomError.badRequest("User Not Found"));
     }
+    // if (!AuthModel.isVerified) {
+    //   let otp = Math.floor(Math.random() * 900) + 1000;
+    //   otpExist = await OtpModel.create({
+    //     auth: dataExist._id,
+    //     otpKey: otp,
+    //     reason: "forgetPassword",
+    //     expireAt: new Date(new Date().getTime() + 60 * 60 * 1000),
+    //   });
+    //   await otpExist.save();
+    //   return next(CustomError.badRequest("VerifyOtp", otp));
+    // }
+    // console.log(AuthModel);
 
     const isPasswordValid = comparePassword(password, AuthModel.password);
     if (!isPasswordValid) {
@@ -357,7 +369,22 @@ const LoginUser = async (req, res, next) => {
     }
 
     if (!AuthModel.isCarInfoCompleted) {
-      return next(CustomError.badRequest("Car info is not completed"));
+      const authData = {
+        email,
+        password,
+        isProfileCompleted: true,
+      };
+      const token = await OtptokenGen({ authData });
+      return next(
+        CustomSuccess.createSuccess(
+          { token, authData },
+          "CarInfo is not completed",
+          200
+        )
+      );
+      return next(
+        CustomSuccess.createSuccess({}, "CarInfo is not completed", 200)
+      );
     }
 
     const device = await linkUserDevice(AuthModel._id, deviceToken, deviceType);
@@ -496,11 +523,13 @@ const forgetPassword = async (req, res, next) => {
 
 const VerifyOtp = async (req, res, next) => {
   try {
-    if (req.user.tokenType != "forgetPassword") {
-      return next(
-        CustomError.createError("Token type is not forgot password", 200)
-      );
-    }
+    console.log("reqreqerq");
+    console.log(req.user);
+    // if (req.user.tokenType != "forgetPassword") {
+    //   return next(
+    //     CustomError.createError("Token type is not forgot password", 200)
+    //   );
+    // }
 
     const { error } = verifyOTPValidator.validate(req.body);
     if (error) {
@@ -513,6 +542,7 @@ const VerifyOtp = async (req, res, next) => {
     const { email } = req.user;
 
     const user = await authModel.findOne({ email }).populate(["otp"]);
+    console.log(user, "uuuuuuuuuuuuu");
     if (!user) {
       return next(CustomError.createError("User not found", 200));
     }
@@ -520,9 +550,9 @@ const VerifyOtp = async (req, res, next) => {
     if (!OTP || OTP.otpUsed) {
       return next(CustomError.createError("OTP not found", 200));
     }
-
-    const userOTP = await bcrypt.hash(otp, genSalt);
-
+    const userOTP = await bcrypt.hash(otp.toString(), genSalt);
+    console.log(userOTP, "userOTP");
+    console.log(OTP.otpKey, "OTP.otpKey");
     if (OTP.otpKey !== userOTP) {
       return next(CustomError.createError("Invalid OTP", 401));
     }
@@ -582,14 +612,41 @@ const VerifyOtp = async (req, res, next) => {
 const resendOtp = async (req, res, next) => {
   try {
     const { user } = req;
-    const { email, password } = user.payload.userData.newUser;
-
-    const User = await authModel.findOne({ email });
-    console.log(User);
-    if (User) {
-      return next(CustomError.badRequest("User Already Exists"));
-    }
+    let email, password;
     let otp = Math.floor(Math.random() * 900) + 1000;
+    console.log("user.payload.tokenType");
+    console.log(user.payload.tokenType);
+    if (user.payload.tokenType === "forgetPassword") {
+      console.log("forgetfeorde");
+      const AuthModel = await authModel.findOne({ _id: user.payload.uid });
+      let otpExist = await OtpModel.findOne({ auth: AuthModel._id });
+      if (otpExist) {
+        await OtpModel.findOneAndUpdate(
+          { auth: AuthModel._id },
+          {
+            otpKey: await bcrypt.hash(otp.toString(), genSalt),
+            reason: "forgetPassword",
+            otpUsed: false,
+            expireAt: new Date(new Date().getTime() + 60 * 60 * 1000),
+          }
+        );
+      } else {
+        otpExist = await OtpModel.create({
+          auth: AuthModel._id,
+          otpKey: otp,
+          reason: "forgetPassword",
+          expireAt: new Date(new Date().getTime() + 60 * 60 * 1000),
+        });
+        await otpExist.save();
+      }
+      console.log(AuthModel);
+      email = AuthModel.email;
+      password = AuthModel.password;
+    } else {
+      email = user.payload.userData.newUser.email;
+      password = user.payload.userData.newUser.password;
+    }
+
     const emailData = {
       subject: "Park-Mate - Account Verification",
       html: `

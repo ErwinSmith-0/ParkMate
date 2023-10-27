@@ -75,7 +75,7 @@ export const createprofilevalidator = joi.object({
 });
 
 export const verifyOTPValidator = joi.object({
-  otp: joi.string().required(),
+  otp: joi.number().required(),
   ...deviceRequired,
 });
 

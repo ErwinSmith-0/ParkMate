@@ -1,3 +1,4 @@
+// import cacheMiddleware from "./Middleware/cacheMiddleware.js";
 import { Router, application } from "express";
 import AuthController from "../Controller/AuthController.js";
 
@@ -36,7 +37,10 @@ AuthRouters.prefix("/auth", EphemeralAccessMiddleware, async function () {
 
 AuthRouters.prefix("/user", AuthMiddleware, async function () {
   // AuthRouters.route("/update").post(AuthController.updateUser);
-  AuthRouters.route("/getUserDetails").get(AuthController.getUserDetails);
+  AuthRouters.route("/getUserDetails").get(
+    // cacheMiddleware(3600),
+    AuthController.getUserDetails
+  );
   AuthRouters.route("/updateProfile").put(AuthController.updateProfile);
   AuthRouters.route("/updateCar").put(AuthController.updateCar);
   AuthRouters.route("/resetpassword").post(AuthController.resetpassword);

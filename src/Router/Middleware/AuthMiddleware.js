@@ -3,47 +3,46 @@ import { joseJwtDecrypt } from "../../Utils/AccessTokenManagement/Tokens.js";
 import CustomError from "../../Utils/ResponseHandler/CustomError.js";
 
 export const AuthMiddleware = async (req, res, next) => {
-  console.log('asdasdsad');
+  console.log("asdasdsad");
   const AuthHeader =
     req.headers.authorization ||
     req.body.token ||
     req.query.token ||
     req.headers["x-access-token"];
   if (!AuthHeader) {
-    return next(CustomError.unauthorized('auth header not found'));
+    return next(CustomError.unauthorized("auth header not found"));
   }
   const parts = AuthHeader.split(" ");
   try {
     if (parts.length !== 2) {
-      return next(CustomError.unauthorized('checking checking'));
+      return next(CustomError.unauthorized("checking checking"));
     }
 
     const [scheme, token] = parts;
     // token
 
     if (!/^Bearer$/i.test(scheme)) {
-      return next(CustomError.unauthorized('checking checking'));
+      return next(CustomError.unauthorized("checking"));
     }
 
     const UserToken = await joseJwtDecrypt(token);
-    console.log(UserToken, 'user token');
-    
-    const UserDetail = await authModel
-      .findOne({ _id: UserToken.payload.uid })
-      // .populate("image");
-
+    // console.log(UserToken, "user token");
+    // console.log(UserToken.payload.userData.newUser.email);
+    let UserDetail = await authModel.findOne({ _id: UserToken.payload.uid });
+    // .populate("image");
     if (!UserDetail) {
-      return next(CustomError.unauthorized('checking checking'));
+      const email = UserToken.payload.userData.newUser.email;
+      UserDetail = await authModel.findOne({ email: email });
+      if (!UserDetail) return next(CustomError.unauthorized("checkingS"));
     }
     UserDetail.tokenType = UserToken.payload.tokenType;
     req.user = UserDetail;
     return next();
   } catch (error) {
     // return next(CustomError.unauthorized('checking checking'));
-    return next(CustomError.createError(error.message, 400))
+    return next(CustomError.createError(error.message, 400));
   }
 };
-
 
 export const EphemeralAccessMiddleware = async (req, res, next) => {
   const AuthHeader =
@@ -68,15 +67,15 @@ export const EphemeralAccessMiddleware = async (req, res, next) => {
     }
 
     const UserToken = await joseJwtDecrypt(token);
-  
+
     if (!UserToken) {
       return next(CustomError.unauthorized("UserToken"));
     }
-   
+
     req.user = UserToken;
     return next();
   } catch (error) {
-    return next(CustomError.createError(error.message, 400))
+    return next(CustomError.createError(error.message, 400));
   }
 };
 
@@ -86,7 +85,7 @@ export const EphemeralAccessMiddleware = async (req, res, next) => {
 //     req.body.token ||
 //     req.query.token ||
 //     req.headers["x-access-token"];
-    
+
 //   if (!AuthHeader) {
 //     return next(CustomError.unauthorized());
 //   }
@@ -112,7 +111,6 @@ export const EphemeralAccessMiddleware = async (req, res, next) => {
 //     if (!UserDetail && UserDetail.userType == "admin") {
 //       return next(CustomError.unauthorized());
 //     }
-
 
 //     req.user = UserDetail;
 //     return next();
