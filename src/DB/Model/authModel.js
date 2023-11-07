@@ -3,12 +3,10 @@ import { hashPassword } from "../../Utils/SecuringPassword.js";
 
 const AuthSchema = mongoose.Schema(
   {
-   
     fullName: {
       type: String,
       required: false,
       trim: true,
-    
     },
 
     email: {
@@ -26,17 +24,17 @@ const AuthSchema = mongoose.Schema(
     isProfileCompleted: {
       type: Boolean,
       // required: true,
-      default:false
+      default: false,
     },
     isCarInfoCompleted: {
       type: Boolean,
       // required: true,
-      default:false
+      default: false,
     },
     isVerified: {
       type: Boolean,
       required: false,
-      default:false
+      default: false,
     },
 
     userType: {

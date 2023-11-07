@@ -113,15 +113,20 @@ const createProfile = async (req, res, next) => {
     );
 
     //user creds
-    const newUser = {
+    // const newUser = {
+    //   email,
+    //   ,
+    // };
+
+    //jwt.sign({userData:newUser , otp:userOTP} , 'secret' , {expiresIn:1})
+    let authData = {
       email,
       password: hashedPassword,
     };
+    const Auth = new authModel(authData);
+    await Auth.save();
 
-    const token = await OtptokenGen({ newUser, otp });
-
-    //jwt.sign({userData:newUser , otp:userOTP} , 'secret' , {expiresIn:1})
-
+    const token = await OtptokenGen({ authData, otp });
     return next(
       CustomSuccess.createSuccess(
         { token },
@@ -138,23 +143,39 @@ const createProfile = async (req, res, next) => {
 const verifyProfile = async (req, res, next) => {
   try {
     const { user } = req;
-
+    console.log("uuuuuu");
     const { otp } = req.body;
     console.log("User ===>", user);
+    console.log(user.payload.userData.authData, "aaaaaaaaaa");
     // Check if the email already exists
-
     const TokenOtp = user.payload.userData.otp;
-    const userData = user.payload.userData.newUser;
-
+    const { email, password } =
+      user.payload.userData.newUser ||
+      user.payload.userData.AuthModel ||
+      user.payload.userData.authData;
+    console.log(email, password, "email,password");
+    const find = await authModel.findOne({ email: email });
+    if (!find) {
+      return next(CustomSuccess.createSuccess({}, "User user not exist", 200));
+    }
     if (TokenOtp !== otp) {
       return next(CustomError.createError("Invalid OTP", 401));
     }
 
-    const token = await OtptokenGen({ userData, isVerified: true });
-
+    let authData = {
+      email,
+      password,
+      isVerified: true,
+    };
+    const token = await OtptokenGen({ authData });
+    const Auth = await authModel.findOneAndUpdate({ email: email }, authData, {
+      new: true,
+    });
+    // const Auth = new authModel(authData);
+    // await Auth.save();
     return next(
       CustomSuccess.createSuccess(
-        { token, userData },
+        { token, Auth },
         "User Verified Succesfully",
         200
       )
@@ -177,12 +198,17 @@ const createUserProfile = async (req, res, next) => {
     if (userType !== "user" && userType !== "admin") {
       return next(CustomError.badRequest("Invalid UserType"));
     }
-    const isVerified = user.payload.userData.isVerified;
+    const isVerified =
+      user.payload.userData.isVerified ||
+      user.payload.userData.authData.isVerified;
 
-    if (!user.payload.userData.userData) {
-      return next(CustomError.badRequest("please Signup Again"));
-    }
-    const { email, password } = user.payload.userData.userData;
+    // console.log(user.payload.userData.authData);
+
+    // if (!user.payload.userData.userData) {
+    //   return next(CustomError.badRequest("please Signup Again"));
+    // }
+    const { email, password } =
+      user.payload.userData.userData || user.payload.userData.authData;
 
     if (!isVerified) {
       return next(CustomError.badRequest("Unverified User"));
@@ -195,14 +221,12 @@ const createUserProfile = async (req, res, next) => {
     let findUser = await authModel.findOne({ email });
 
     let authData = {
-      userType,
-      isVerified,
       email,
-      password,
+      userType,
       isProfileCompleted: true,
     };
-    const Auth = new authModel(authData);
-    await Auth.save();
+
+    // await Auth.save();
 
     findUser = await authModel.findOne({ email });
 
@@ -242,6 +266,12 @@ const createUserProfile = async (req, res, next) => {
       }
     }
 
+    const Auth = await authModel.findOneAndUpdate(
+      { _id: findUser._id },
+      { isProfileCompleted: true },
+      { new: true }
+    );
+
     const token = await OtptokenGen({ authData });
     return next(
       CustomSuccess.createSuccess(
@@ -260,6 +290,8 @@ const createCarProfile = async (req, res, next) => {
     const user = req.user;
     const { carName, licenseNumber, carPlateNumber, modelCar } = req.body;
     const { email, isProfileCompleted } = user.payload.userData.authData;
+
+    console.log(user.payload.userData);
 
     if (!isProfileCompleted) {
       return next(CustomError.badRequest("complete User Profile"));
@@ -368,11 +400,140 @@ const LoginUser = async (req, res, next) => {
       return next(CustomError.unauthorized("Invalid Password"));
     }
 
+    if (!AuthModel.isVerified) {
+      const authData = {
+        isVerified: false,
+        isProfileCompleted: false,
+        isCarInfoCompleted: false,
+      };
+      //  let {email, password}=req.body;
+      let otp = Math.floor(Math.random() * 900) + 1000;
+      //  console.log("user.payload.tokenType");
+      //  console.log(user.payload.tokenType);
+      //  if (user.payload.tokenType === "forgetPassword") {
+      //  console.log("forgetfeorde");
+      const AuthModel = await authModel.findOne({ email: email });
+      let otpExist = await OtpModel.findOne({ auth: AuthModel._id });
+      if (otpExist) {
+        await OtpModel.findOneAndUpdate(
+          { auth: AuthModel._id },
+          {
+            otpKey: await bcrypt.hash(otp.toString(), genSalt),
+            reason: "forgetPassword",
+            otpUsed: false,
+            expireAt: new Date(new Date().getTime() + 60 * 60 * 1000),
+          }
+        );
+      } else {
+        otpExist = await OtpModel.create({
+          auth: AuthModel._id,
+          otpKey: otp,
+          reason: "forgetPassword",
+          expireAt: new Date(new Date().getTime() + 60 * 60 * 1000),
+        });
+        await otpExist.save();
+      }
+
+      const emailData = {
+        subject: "Park-Mate - Account Verification",
+        html: `
+<div
+  style = "padding:20px 20px 40px 20px; position: relative; overflow: hidden; width: 100%;"
+>
+  <img 
+        style="
+        top: 0;position: absolute;z-index: 0;width: 100%;height: 100vmax;object-fit: cover;" 
+        src="cid:background" alt="background" 
+  />
+  <div style="z-index:1; position: relative;">
+  <header style="padding-bottom: 20px">
+    <div class="logo" style="text-align:center;">
+      <img 
+        style="width: 150px;" 
+        src="cid:logo" alt="logo" />
+    </div>
+  </header>
+  <main 
+    style= "padding: 20px; background-color: #f5f5f5; border-radius: 10px; width: 80%; margin: 0 auto; margin-bottom: 20px; font-family: 'Poppins', sans-serif;"
+  >
+    <h1 
+      style="color: #FD6F3B; font-size: 30px; font-weight: 700;"
+    >Welcome To ParkMate</h1>
+    <p
+      style="font-size: 24px; text-align: left; font-weight: 500; font-style: italic;"
+    >Hi,</p>
+    <p 
+      style="font-size: 20px; text-align: left; font-weight: 500;"
+    > Please use the following OTP to reset your password.</p>
+    <h2
+      style="font-size: 36px; font-weight: 700; padding: 10px; width:100%; text-align:center;color: #FD6F3B; text-align: center; margin-top: 20px; margin-bottom: 20px;"
+    >${otp}</h2>
+    <p style = "font-size: 16px; font-style:italic; color: #343434">If you did not request this email, kindly ignore this. If this is a frequent occurence <a
+    style = "color: #FD6F3B; text-decoration: none; border-bottom: 1px solid #FD6F3B;" href = "#"
+    >let us know.</a></p>
+    <p style = "font-size: 20px;">Regards,</p>
+    <p style = "font-size: 20px;">Dev Team</p>
+  </main>
+  </div>
+<div>
+`,
+        attachments: [
+          {
+            filename: "logo.jpg",
+            path: "./assets/logo.jpg",
+            cid: "logo",
+            contentDisposition: "inline",
+          },
+          // {
+          //   filename: "bg.png",
+          //   path: "./Uploads/bg.png",
+          //   cid: "background",
+          //   contentDisposition: "inline",
+          // },
+        ],
+      };
+      await sendEmails(
+        email,
+        emailData.subject,
+        emailData.html,
+        emailData.attachments
+      );
+      const token = await OtptokenGen({ AuthModel, otp });
+
+      return next(
+        CustomSuccess.createSuccess(
+          { token, authData },
+          // { token },
+          "user isVerified is false and Verification OTP has been sent",
+          200
+        )
+      );
+    }
+
+    if (!AuthModel.isProfileCompleted) {
+      const authData = {
+        email,
+        password,
+        isVerified: true,
+        isProfileCompleted: false,
+        isCarInfoCompleted: false,
+      };
+      const token = await OtptokenGen({ authData });
+      return next(
+        CustomSuccess.createSuccess(
+          { token, authData },
+          "UserProfile is not completed",
+          200
+        )
+      );
+    }
     if (!AuthModel.isCarInfoCompleted) {
       const authData = {
         email,
         password,
+        isVerified: true,
         isProfileCompleted: true,
+        isCarInfoCompleted: false,
       };
       const token = await OtptokenGen({ authData });
       return next(
@@ -381,9 +542,6 @@ const LoginUser = async (req, res, next) => {
           "CarInfo is not completed",
           200
         )
-      );
-      return next(
-        CustomSuccess.createSuccess({}, "CarInfo is not completed", 200)
       );
     }
 
@@ -399,7 +557,7 @@ const LoginUser = async (req, res, next) => {
     );
     return next(
       CustomSuccess.createSuccess(
-        { AuthModel, token },
+        { authData: AuthModel, token },
         "User loged in successfully",
         200
       )
@@ -612,17 +770,24 @@ const VerifyOtp = async (req, res, next) => {
 const resendOtp = async (req, res, next) => {
   try {
     const { user } = req;
+    console.log(user.payload);
+    // console.log(user.payload.userData.AuthModel.email);
+    // console.log(user.payload.uid);
     let email, password;
     let otp = Math.floor(Math.random() * 900) + 1000;
-    console.log("user.payload.tokenType");
-    console.log(user.payload.tokenType);
+    // console.log("user.payload.tokenType");
+    // console.log(user.payload.tokenType);
+    let authData;
     if (user.payload.tokenType === "forgetPassword") {
-      console.log("forgetfeorde");
-      const AuthModel = await authModel.findOne({ _id: user.payload.uid });
-      let otpExist = await OtpModel.findOne({ auth: AuthModel._id });
+      // console.log("forgetfeorde");
+      authData = await authModel.findOne({
+        _id: user.payload.uid || user.payload.userData.AuthModel._id,
+      });
+      console.log(authData);
+      let otpExist = await OtpModel.findOne({ auth: authData._id });
       if (otpExist) {
         await OtpModel.findOneAndUpdate(
-          { auth: AuthModel._id },
+          { auth: authData._id },
           {
             otpKey: await bcrypt.hash(otp.toString(), genSalt),
             reason: "forgetPassword",
@@ -632,19 +797,34 @@ const resendOtp = async (req, res, next) => {
         );
       } else {
         otpExist = await OtpModel.create({
-          auth: AuthModel._id,
+          auth: authData._id,
           otpKey: otp,
           reason: "forgetPassword",
           expireAt: new Date(new Date().getTime() + 60 * 60 * 1000),
         });
         await otpExist.save();
       }
-      console.log(AuthModel);
-      email = AuthModel.email;
-      password = AuthModel.password;
-    } else {
-      email = user.payload.userData.newUser.email;
-      password = user.payload.userData.newUser.password;
+      // console.log(AuthModel);
+      if (authData) {
+        email = authData.email;
+        password = authData.password;
+        console.log(email, "eeeeeeeeeeeeeeeeeeeeeeeeeeee");
+      }
+    }
+    if (!authData) {
+      if (user.payload.userData.AuthModel) {
+        console.log("1");
+        email = user.payload.userData.AuthModel.email;
+        password = user.payload.userData.AuthModel.password;
+      } else if (user.payload.userData.authData) {
+        console.log("2");
+        email = user.payload.userData.authData.email;
+        password = user.payload.userData.authData.password;
+      } else if (user.payload.userData.newUser) {
+        console.log("3");
+        email = user.payload.userData.newUser.email;
+        password = user.payload.userData.newUser.password;
+      }
     }
 
     const emailData = {
@@ -653,29 +833,29 @@ const resendOtp = async (req, res, next) => {
 <div
   style = "padding:20px 20px 40px 20px; position: relative; overflow: hidden; width: 100%;"
 >
-  <img 
+  <img
         style="
-        top: 0;position: absolute;z-index: 0;width: 100%;height: 100vmax;object-fit: cover;" 
-        src="cid:background" alt="background" 
+        top: 0;position: absolute;z-index: 0;width: 100%;height: 100vmax;object-fit: cover;"
+        src="cid:background" alt="background"
   />
   <div style="z-index:1; position: relative;">
   <header style="padding-bottom: 20px">
     <div class="logo" style="text-align:center;">
-      <img 
-        style="width: 150px;" 
+      <img
+        style="width: 150px;"
         src="cid:logo" alt="logo" />
     </div>
   </header>
-  <main 
+  <main
     style= "padding: 20px; background-color: #f5f5f5; border-radius: 10px; width: 80%; margin: 0 auto; margin-bottom: 20px; font-family: 'Poppins', sans-serif;"
   >
-    <h1 
+    <h1
       style="color: #FD6F3B; font-size: 30px; font-weight: 700;"
     >Welcome To ParkMate</h1>
     <p
       style="font-size: 24px; text-align: left; font-weight: 500; font-style: italic;"
     >Hi,</p>
-    <p 
+    <p
       style="font-size: 20px; text-align: left; font-weight: 500;"
     > Please use the following OTP to reset your password.</p>
     <h2
@@ -734,6 +914,31 @@ const resendOtp = async (req, res, next) => {
     return next(CustomError.createError(error.message, 500));
   }
 };
+
+// const resendOtp = async (req, res, next) => {
+//   try {
+//     const { user } = req;
+
+//     const checkUserExistWithId = await authModel.findOne({
+//       _id: user.payload.uid,
+//     });
+
+//     if (!checkUserExistWithId) {
+//       return next(CustomError.notFound("No user found"));
+//     }
+
+//      if (checkUserExistWithId.isVerified) {
+//        return next(
+//          CustomSuccess.createSuccess(
+//            {},
+//            "Your account is already verified",
+//            200
+//          )
+//        );
+//      }
+
+//   } catch (error) {}
+// };
 
 const changePassword = async (req, res, next) => {
   try {
@@ -841,7 +1046,7 @@ const getUserDetails = async (req, res, next) => {
       });
 
     const imageUrl =
-      "https://parkmate-api.thesuitchstaging.com/parkmate/Uploads/"; // Replace with your live image URL prefix
+      "https://parkmate-api.thesuitchstaging.com/parkmate/Uploads/";
     findCar.image.file = imageUrl + findCar.image.file;
     findProfile.image.file = imageUrl + findProfile.image.file;
 
@@ -864,7 +1069,7 @@ const getUserDetails = async (req, res, next) => {
 const logout = async (req, res, next) => {
   try {
     const { deviceType, deviceToken } = req.body;
-
+    console.log(req.user);
     unlinkUserDevice(req.user._id, deviceToken, deviceType);
     return next(
       CustomSuccess.createSuccess({}, "User Logout Successfully", 200)

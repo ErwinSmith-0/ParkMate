@@ -26,6 +26,7 @@ export const AuthMiddleware = async (req, res, next) => {
     }
 
     const UserToken = await joseJwtDecrypt(token);
+    console.log("UserToken");
     // console.log(UserToken, "user token");
     // console.log(UserToken.payload.userData.newUser.email);
     let UserDetail = await authModel.findOne({ _id: UserToken.payload.uid });
